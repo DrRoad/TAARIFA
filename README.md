@@ -1,5 +1,5 @@
 # TAARIFA
-Data Mining of Tanzanian Water Pumps: IEMS 304 Final Project   
+Data Mining of Tanzanian Water Pumps   
 
 Eric Chang   
 Mathew Li   
