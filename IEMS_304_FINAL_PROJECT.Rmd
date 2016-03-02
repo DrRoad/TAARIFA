@@ -1,0 +1,106 @@
+---
+title: "IEMS 304 Final Project"
+author: "Eric Chang, Chen Lin, Haoyu Wang, Allie Woodhouse"
+date: "Tuesday, March 01, 2016"
+output: pdf_document
+---
+
+## Data prep and variable selection
+
+Notes:
+
+1. Combined "non functional" and "functional needs repair" response variable.
+2. Filtered redundant variables
+3. Added `construction year` and `population` missing value dummy
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(magrittr)
+
+# Read data
+df.labels <- read.csv("train_labels.csv")
+df.values  <- read.csv("train_values.csv")
+
+# Create dependent variable, reduce to binomial logistic regression 
+df.labels$status_group <- as.character(df.labels$status_group)
+
+df.labels <- df.labels %>%
+  mutate(status_group = replace(status_group, status_group=="functional", 1),
+         status_group = replace(status_group, status_group=="non functional", 0),
+         status_group = replace(status_group, status_group=="functional needs repair", 0))
+
+# Join datasets
+train <- left_join(df.values, df.labels, by="id")
+
+train <- select(train, status_group, gps_height,
+                   amount_tsh, longitude, latitude,
+                   basin, region, 
+                   population, public_meeting, 
+                   scheme_management, permit, construction_year,
+                   extraction_type_class,
+                   management_group, payment,
+                   water_quality, quantity,
+                   source_type, waterpoint_type)
+
+# Construction year variable - dealing with missing values
+train$construction_year_miss = ifelse(train$construction_year==0, 1, 0)
+train$construction_year_miss <- as.factor(train$construction_year_miss)
+
+# Construction year variable - dealing with missing values
+train$population_miss = ifelse(train$population==0, 1, 0)
+train$population_miss <- as.factor(train$population_miss)
+```
+
+\newpage
+
+## Variable Importance
+
+We examine the importance of each variables and try to filter out unnecessary variables to simplify analysis.
+
+```{r, eval=FALSE}
+# Random Forest
+library(randomForest)
+fit  <-  randomForest(as.factor(status_group) ~ ., data=train)
+varImpPlot(fit)
+```
+![Variable Importance Plot](VarImpPlot.png)
+
+We filtered our predictor variables down to 11 based on the variable importance plot.
+
+```{r}
+train <- select(train, -management_group, -public_meeting,
+                       -permit, -water_quality, -basin, -amount_tsh,
+                       -scheme_management, -source_type)
+train <- filter(train, longitude > 1)
+```
+
+\newpage
+
+## Plots
+
+```{r}
+# Longitude and Latitude
+ggplot(data=train) + geom_point(aes(x=longitude, y=latitude, 
+                                    color=status_group, alpha=0.5, size=1), size=1)
+
+```
+
+The clustering of the good pumps as well as the nonlinearity of the clustering among the x and y (longitude and latitude) axes lead us to believe that we should include an interaction and spline in our model.   
+
+For Prof:   
+1. This assumption correct?
+2. Interaction among splines?
+
+\newpage
+
+## Performance Metrics
+```{r, eval=FALSE}
+# Obtaining True/False table for random forest observations
+tab <- table(train$status_group, train$status_group.rf)
+prop.table(table(train$status_group, train$status_group.rf), 1)
+sum(diag(tab))/sum(tab)
+```
+
+
+
