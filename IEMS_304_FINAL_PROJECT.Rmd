@@ -2,7 +2,7 @@
 title: "IEMS 304 Final Project"
 author: "Eric Chang, Chen Lin, Haoyu Wang, Allie Woodhouse"
 date: "Tuesday, March 01, 2016"
-output: pdf_document
+output: html_document
 ---
 
 ## Data prep and variable selection
@@ -43,6 +43,8 @@ train <- select(train, status_group, gps_height,
                    water_quality, quantity,
                    source_type, waterpoint_type)
 
+train$status_group <- as.factor(train$status_group) # Convert status_group to factor for regression
+
 # Construction year variable - dealing with missing values
 train$construction_year_miss = ifelse(train$construction_year==0, 1, 0)
 train$construction_year_miss <- as.factor(train$construction_year_miss)
@@ -79,18 +81,43 @@ train <- filter(train, longitude > 1)
 
 ## Plots
 
-```{r}
+```{r, eval=FALSE}
 # Longitude and Latitude
-ggplot(data=train) + geom_point(aes(x=longitude, y=latitude, 
-                                    color=status_group, alpha=0.5, size=1), size=1)
-
+ggplot(data=train) + 
+  geom_point(aes(x=longitude, y=latitude, 
+                  color=status_group, alpha=0.5, size=1), size=1) +
+  facet_grid(.~status_group)
 ```
+![](LongLat.png)
 
 The clustering of the good pumps as well as the nonlinearity of the clustering among the x and y (longitude and latitude) axes lead us to believe that we should include an interaction and spline in our model.   
 
 For Prof:   
 1. This assumption correct?
 2. Interaction among splines?
+
+### Looking at Longitude and Latitude Nonlinearity
+
+```{r, message=FALSE}
+library(splines); library(pROC);
+
+temp1 <- glm(status_group ~ longitude + latitude, data=train, family=binomial)
+temp2 <- glm(status_group ~ bs(longitude) + bs(latitude), data=train, family=binomial)
+
+plot.roc(train$status_group, predict(temp1, newdata=train, type="response"))
+plot.roc(train$status_group, predict(temp2, newdata=train, type="response"))
+
+# Spline Interaction
+temp3 <- glm(status_group ~ bs(longitude) + bs(latitude) + bs(longitude)*bs(latitude), 
+             data=train, family=binomial)
+plot.roc(train$status_group, predict(temp3, newdata=train, type="response"))
+
+# 3 top variables interactions
+temp4 <- glm(status_group ~ (bs(longitude) + bs(latitude) + quantity)^2, 
+             data=train, family=binomial)
+plot.roc(train$status_group, predict(temp4, newdata=train, type="response"))
+```
+
 
 \newpage
 
