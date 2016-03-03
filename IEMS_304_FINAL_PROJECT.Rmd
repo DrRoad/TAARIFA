@@ -5,6 +5,9 @@ date: "Tuesday, March 01, 2016"
 output: html_document
 ---
 
+Bagging, boosted tree, random forest
+
+
 ## Data prep and variable selection
 
 Notes:
@@ -101,23 +104,44 @@ For Prof:
 ```{r, message=FALSE}
 library(splines); library(pROC);
 
-temp1 <- glm(status_group ~ longitude + latitude, data=train, family=binomial)
-temp2 <- glm(status_group ~ bs(longitude) + bs(latitude), data=train, family=binomial)
+# Split into 80/20 Train/Test Set
+train.glm <- sample_frac(train, .8)
+test.glm <- setdiff(train, train.glm)
 
-plot.roc(train$status_group, predict(temp1, newdata=train, type="response"))
-plot.roc(train$status_group, predict(temp2, newdata=train, type="response"))
+# Linear vs. Spline terms
+lin <- glm(status_group ~ longitude + latitude, data=train.glm, family=binomial)
+plot.roc(test.glm$status_group, predict(lin, newdata=test.glm, type="response"))
 
-# Spline Interaction
-temp3 <- glm(status_group ~ bs(longitude) + bs(latitude) + bs(longitude)*bs(latitude), 
-             data=train, family=binomial)
-plot.roc(train$status_group, predict(temp3, newdata=train, type="response"))
+spl <- glm(status_group ~ bs(longitude) + bs(latitude), data=train.glm, family=binomial)
+plot.roc(test.glm$status_group, predict(spl, newdata=test.glm, type="response"))
 
-# 3 top variables interactions
-temp4 <- glm(status_group ~ (bs(longitude) + bs(latitude) + quantity)^2, 
-             data=train, family=binomial)
-plot.roc(train$status_group, predict(temp4, newdata=train, type="response"))
+# INTERACTION TERMS
+int1 <- glm(status_group ~ (bs(longitude) + bs(latitude)), 
+             data=train.glm, family=binomial)
+p <- plot.roc(test.glm$status_group, predict(int1, newdata=test.glm, type="response"))
+p$auc
+
+int2 <- glm(status_group ~ (bs(longitude) + bs(latitude))^2, 
+             data=train.glm, family=binomial)
+p <- plot.roc(test.glm$status_group, predict(int2, newdata=test.glm, type="response"))
+p$auc
+
+int3 <- glm(status_group ~ (bs(longitude) + bs(latitude))^3, 
+             data=train.glm, family=binomial)
+p <- plot.roc(test.glm$status_group, predict(int3, newdata=test.glm, type="response"))
+p$auc
+
+int4 <- glm(status_group ~ (bs(longitude) + bs(latitude))^4, 
+             data=train.glm, family=binomial)
+p <- plot.roc(test.glm$status_group, predict(int4, newdata=test.glm, type="response"))
+p$auc
 ```
 
+## Quantity Variable
+```{r, eval=FALSE}
+library(ggplot2)
+ggplot(data=train) + stat_count(aes(x=status_group, fill=..count..)) + facet_grid(. ~ quantity)
+```
 
 \newpage
 
