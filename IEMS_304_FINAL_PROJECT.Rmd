@@ -59,15 +59,28 @@ train$population_miss <- as.factor(train$population_miss)
 
 \newpage
 
+## Correlation and Multicollinearity
+
+Most of the variables are factors so we only need to look at a few numeric variables for multicollinearity, namely, `gps_height`, `longitude`, `latitude`, and `construction year`.
+
+```{r}
+
+
+```
+
+
 ## Variable Importance
 
 We examine the importance of each variables and try to filter out unnecessary variables to simplify analysis.
+
+(For future reference, to use more than 4gb memory we must be using 64 bit R and reset memory limit using the function memory.limit() to take advantage of a high memory machine)
 
 ```{r, eval=FALSE}
 # Random Forest
 library(randomForest)
 fit  <-  randomForest(as.factor(status_group) ~ ., data=train)
 varImpPlot(fit)
+fit
 ```
 ![Variable Importance Plot](VarImpPlot.png)
 
@@ -77,7 +90,6 @@ We filtered our predictor variables down to 11 based on the variable importance 
 train <- select(train, -management_group, -public_meeting,
                        -permit, -water_quality, -basin, -amount_tsh,
                        -scheme_management, -source_type)
-train <- filter(train, longitude > 1)
 ```
 
 \newpage
@@ -86,9 +98,11 @@ train <- filter(train, longitude > 1)
 
 ```{r, eval=FALSE}
 # Longitude and Latitude
+train <- filter(train, longitude > 1)
+
 ggplot(data=train) + 
   geom_point(aes(x=longitude, y=latitude, 
-                  color=status_group, alpha=0.5, size=1), size=1) +
+                  color=status_group, alpha=0.2, size=1), size=1) +
   facet_grid(.~status_group)
 ```
 ![](LongLat.png)
@@ -152,6 +166,46 @@ tab <- table(train$status_group, train$status_group.rf)
 prop.table(table(train$status_group, train$status_group.rf), 1)
 sum(diag(tab))/sum(tab)
 ```
+
+## K Nearest Neighbor Classification
+```{r}
+# Unity based normalization
+knn.train <- train
+lat <- knn.train$latitude
+knn.train$latitude <- (lat - min(lat))/(max(lat)-min(lat))
+lon <- knn.train$longitude
+knn.train$longitude <- (lon - min(lon))/(max(lon)-min(lon))
+gps <- knn.train$gps_height
+knn.train$gps_height <- (gps - min(gps))/(max(gps)-min(gps))
+
+# Sample and split into training and classification variables
+knn.train <- sample_frac(train, .8)
+knn.test <- setdiff(train, knn.train)
+
+knn.trainlabel <- knn.train[,"status_group"]
+knn.train <- select(knn.train, longitude, latitude, gps_height)
+knn.testlabel <- knn.test[,"status_group"]
+knn.test <- select(knn.test, longitude, latitude, gps_height)
+
+knn.pred <- knn(knn.train, knn.test, cl=knn.trainlabel, k=3)
+
+temp <- data.frame(knn.testlabel, knn.pred)
+temp <- mutate(temp, suc = ifelse(knn.testlabel==knn.pred, 1, 0))
+# Clustering by longitude and latitude, 3717 7794
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
