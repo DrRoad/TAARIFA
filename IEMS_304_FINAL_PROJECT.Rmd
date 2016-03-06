@@ -152,39 +152,6 @@ rf1
 The random forest reflects a drastic improvement over the regression models, with a correct classification rate of . Our insight from this result is that because we are using the same two variables, `longitude` and `latitude`, there are complex interactions and transformations in the data that are not captured by a simple regression model, and in this case, machine learning techniques will likely prove to be more effective for categorization. This idea is supported by the complex map we obtained of the clustering of pumps.
 
 
-
-## K Nearest Neighbor Classification
-```{r, eval=FALSE}
-library(class)
-
-# Unity based normalization
-knn.train <- train
-lat <- knn.train$latitude
-knn.train$latitude <- (lat - min(lat))/(max(lat)-min(lat))
-lon <- knn.train$longitude
-knn.train$longitude <- (lon - min(lon))/(max(lon)-min(lon))
-gps <- knn.train$gps_height
-knn.train$gps_height <- (gps - min(gps))/(max(gps)-min(gps))
-
-# Sample and split into training and test set
-knn.train <- sample_frac(train, .8)
-knn.test <- setdiff(train, knn.train)
-
-knn.trainlabel <- knn.train[,"status_group"]
-knn.trainlabel <- ifelse(as.character(knn.trainlabel)=="functional", 1, 0)
-knn.train <- select(knn.train, longitude, latitude)
-knn.testlabel <- knn.test[,"status_group"]
-knn.testlabel <- ifelse(as.character(knn.testlabel)=="functional", 1, 0)
-knn.test <- select(knn.test, longitude, latitude)
-
-knn.pred <- knn(knn.train, knn.test, cl=knn.trainlabel, k=3)
-
-temp <- data.frame(knn.testlabel, knn.pred)
-temp <- mutate(temp, suc = ifelse(knn.testlabel==knn.pred, 1, 0))
-# Clustering by longitude and latitude, 3717 7794
-```
-
-
 ## Full Machine Learning Models
 
 Because we are now exclusively using machine learning techniques to categorize the Tanzanian water pumps, we will return to the original 3-level categorical response variable as the reason we reduced it earlier was to avoid the use of multinomial logistic regression.
@@ -257,31 +224,141 @@ eval.gbm <- function(gbm, data=test.gbm, n.trees){
 }
 ```
 
-```{r}
+```{r, eval=FALSE}
 # Default boosted tree
-gbm <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial")
-eval.gbm(gbm, n.trees=100)
+gbm1 <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial")
+```
+```{r, message=FALSE}
+eval.gbm(gbm1, n.trees=100)
+```
 
+```{r, eval=FALSE}
+# Default boosted tree
 # Increasing number of trees
-gbm <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial", n.trees=1000)
-eval.gbm(gbm, n.trees=1000)
+gbm2 <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial", n.trees=1000)
+```
+```{r, message=FALSE}
+eval.gbm(gbm2, n.trees=1000)
+```
 
+```{r, eval=FALSE}
 # Changing depth and learning rate
-gbm <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial", 
+gbm3 <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial", 
            n.trees=1000, interaction.depth = 2, shrinkage = .01)
-eval.gbm(gbm, n.trees=1000)
+```
+```{r, message=FALSE}
+eval.gbm(gbm3, n.trees=1000)
+```
+
+```{r, eval=FALSE}
+# Increaing depth again, increase number of trees
+gbm4 <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial", 
+           n.trees=1000, interaction.depth = 3, shrinkage = .01)
+```
+```{r, message=FALSE}
+eval.gbm(gbm4, n.trees=1000)
+```
+
+## Improving our model through feature engineering
+
+### The Date Variable
+```{r, eval=FALSE}
+train <- left_join(df.values, df.labels, by="id")
+train <- dataprep(train)
+train$date_recorded <- as.Date(as.character(train$date_recorded)) # Common date format is recognized by R
+
+# Create "days after min date" variable
+train$date_recorded <- as.integer(train$date_recorded - min(train$date_recorded))
+
+# Filter outliers
+train <- filter(train, date_recorded > 3000)
+
+# Would normalizing the dates help at all for a random forest? Since we are making breaks and not calculating any statistics
+```
+
+```{r, eval=FALSE}
+rf.1000.2 <- randomForest(as.factor(status_group) ~ ., data=train, ntree=1000)
+```
+```{r}
+rf.1000.2
 ```
 
 
 
-## Quantity Variable
+## Random Extra Stuff
+### Generating the predictions
+```{r}
+test <- read.csv("test.csv")
+test$status_group <- 0
+test <- select(dataprep(test), -status_group)
+
+levels(test$basin) <- levels(train$basin)
+levels(test$region) <- levels(train$region)
+levels(test$public_meeting) <- levels(train$public_meeting)
+levels(test$scheme_management) <- levels(train$scheme_management)
+levels(test$permit) <- levels(train$permit)
+levels(test$extraction_type_class) <- levels(train$extraction_type_class)
+levels(test$management_group) <- levels(train$management_group)
+levels(test$payment) <- levels(train$payment)
+levels(test$payment_type) <- levels(train$payment_type)
+levels(test$water_quality) <- levels(train$water_quality)
+levels(test$quantity) <- levels(train$quantity)
+levels(test$source_type) <- levels(train$source_type)
+levels(test$waterpoint_type) <- levels(train$waterpoint_type)
+levels(test$construction_year_miss) <- levels(train$construction_year_miss)
+levels(test$population_miss) <- levels(train$population_miss)
+
+test$date_recorded <- as.Date(as.character(test$date_recorded)) # Common date format is recognized by R
+# Create "days after min date" variable
+test$date_recorded <- as.integer(test$date_recorded - min(test$date_recorded))
+
+
+test$pred <- predict(rf.1000.2, newdata=test)
+
+```
+
+
+### K Nearest Neighbor Classification
+```{r, eval=FALSE}
+library(class)
+
+# Unity based normalization
+knn.train <- train
+lat <- knn.train$latitude
+knn.train$latitude <- (lat - min(lat))/(max(lat)-min(lat))
+lon <- knn.train$longitude
+knn.train$longitude <- (lon - min(lon))/(max(lon)-min(lon))
+gps <- knn.train$gps_height
+knn.train$gps_height <- (gps - min(gps))/(max(gps)-min(gps))
+
+# Sample and split into training and test set
+knn.train <- sample_frac(train, .8)
+knn.test <- setdiff(train, knn.train)
+
+knn.trainlabel <- knn.train[,"status_group"]
+knn.trainlabel <- ifelse(as.character(knn.trainlabel)=="functional", 1, 0)
+knn.train <- select(knn.train, longitude, latitude)
+knn.testlabel <- knn.test[,"status_group"]
+knn.testlabel <- ifelse(as.character(knn.testlabel)=="functional", 1, 0)
+knn.test <- select(knn.test, longitude, latitude)
+
+knn.pred <- knn(knn.train, knn.test, cl=knn.trainlabel, k=3)
+
+temp <- data.frame(knn.testlabel, knn.pred)
+temp <- mutate(temp, suc = ifelse(knn.testlabel==knn.pred, 1, 0))
+# Clustering by longitude and latitude, 3717 7794
+```
+
+
+
+### Quantity Variable
 ```{r, eval=FALSE}
 library(ggplot2)
 ggplot(data=train) + stat_count(aes(x=status_group, fill=..count..)) + facet_grid(. ~ quantity)
 ```
 
 
-## Correlation and Multicollinearity
+### Correlation and Multicollinearity
 
 Most of the variables are factors so we only need to look at a few numeric variables for multicollinearity, namely, `gps_height`, `longitude`, `latitude`, and `construction year`.
 
@@ -290,7 +367,7 @@ Most of the variables are factors so we only need to look at a few numeric varia
 ```
 
 
-## Variable Importance
+### Variable Importance
 
 We examine the importance of each variables and try to filter out unnecessary variables to simplify analysis.
 
@@ -307,14 +384,14 @@ fit
 
 We filtered our predictor variables down to 11 based on the variable importance plot.
 
-```{r}
+```{r, eval=FALSE}
 train <- select(train, -management_group, -public_meeting,
                        -permit, -water_quality, -basin, -amount_tsh,
                        -scheme_management, -source_type)
 ```
 
-## The Date Variable
-```{r}
+### The Date Variable
+```{r, eval=FALSE}
 train <- left_join(df.values, df.labels, by="id")
 train$date_recorded <- as.Date(as.character(train$date_recorded)) # Common date format is recognized by R
 
