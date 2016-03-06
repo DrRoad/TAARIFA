@@ -287,8 +287,9 @@ rf.1000.2
 
 ## Random Extra Stuff
 ### Generating the predictions
-```{r}
+```{r, eval=FALSE}
 test <- read.csv("test.csv")
+id <- test$id
 test$status_group <- 0
 test <- select(dataprep(test), -status_group)
 
@@ -314,7 +315,8 @@ test$date_recorded <- as.integer(test$date_recorded - min(test$date_recorded))
 
 
 test$pred <- predict(rf.1000.2, newdata=test)
-
+test$id <- id
+write.csv(select(test, id, pred), file="rf_1000_2.csv")
 ```
 
 
