@@ -4,6 +4,10 @@ author: "Eric Chang, Chen Lin, Haoyu Wang, Allie Woodhouse"
 date: "Tuesday, March 01, 2016"
 output: html_document
 ---
+```{r}
+# We will be loading the finished models from a workspace to avoid having to run the computationally intensive machine learning models every time.
+load("FinalProject.RData")
+```
 
 Bagging, boosted tree, random forest
 
@@ -21,32 +25,17 @@ library(dplyr)
 library(ggplot2)
 library(magrittr)
 
-# Read data
-df.labels <- read.csv("train_labels.csv")
-df.values  <- read.csv("train_values.csv")
-
-# Create dependent variable, reduce to binomial logistic regression 
-df.labels$status_group <- as.character(df.labels$status_group)
-
-df.labels <- df.labels %>%
-  mutate(status_group = replace(status_group, status_group=="functional", 1),
-         status_group = replace(status_group, status_group=="non functional", 0),
-         status_group = replace(status_group, status_group=="functional needs repair", 0))
-
-# Join datasets
-train <- left_join(df.values, df.labels, by="id")
-
-train <- select(train, status_group, gps_height,
+# DATAPREP Function
+dataprep <- function(train){
+train <- select(train, status_group, gps_height, date_recorded,
                    amount_tsh, longitude, latitude,
                    basin, region, 
                    population, public_meeting, 
                    scheme_management, permit, construction_year,
                    extraction_type_class,
-                   management_group, payment,
+                   management_group, payment, payment_type,
                    water_quality, quantity,
                    source_type, waterpoint_type)
-
-train$status_group <- as.factor(train$status_group) # Convert status_group to factor for regression
 
 # Construction year variable - dealing with missing values
 train$construction_year_miss = ifelse(train$construction_year==0, 1, 0)
@@ -55,120 +44,119 @@ train$construction_year_miss <- as.factor(train$construction_year_miss)
 # Construction year variable - dealing with missing values
 train$population_miss = ifelse(train$population==0, 1, 0)
 train$population_miss <- as.factor(train$population_miss)
+
+return(train)
+}
+
+# Read data
+df.labels <- read.csv("train_labels.csv")
+df.values  <- read.csv("train_values.csv")
+
+# Join dataset and call prep function
+train <- left_join(df.values, df.labels, by="id")
+train <- dataprep(train)
+
+# Reduce 3 level categorical response var to binomial 
+train$status_group <- as.character(train$status_group)
+
+train <- train %>%
+  mutate(status_group = replace(status_group, status_group=="functional", 1),
+         status_group = replace(status_group, status_group=="non functional", 0),
+         status_group = replace(status_group, status_group=="functional needs repair", 0))
+train$status_group <- as.factor(train$status_group)
+
 ```
 
-\newpage
 
-## Correlation and Multicollinearity
+## Exploratory Analysis
 
-Most of the variables are factors so we only need to look at a few numeric variables for multicollinearity, namely, `gps_height`, `longitude`, `latitude`, and `construction year`.
-
-```{r}
-
-
-```
-
-
-## Variable Importance
-
-We examine the importance of each variables and try to filter out unnecessary variables to simplify analysis.
-
-(For future reference, to use more than 4gb memory we must be using 64 bit R and reset memory limit using the function memory.limit() to take advantage of a high memory machine)
-
-```{r, eval=FALSE}
-# Random Forest
-library(randomForest)
-fit  <-  randomForest(as.factor(status_group) ~ ., data=train)
-varImpPlot(fit)
-fit
-```
-![Variable Importance Plot](VarImpPlot.png)
-
-We filtered our predictor variables down to 11 based on the variable importance plot.
-
-```{r}
-train <- select(train, -management_group, -public_meeting,
-                       -permit, -water_quality, -basin, -amount_tsh,
-                       -scheme_management, -source_type)
-```
-
-\newpage
-
-## Plots
-
-```{r, eval=FALSE}
+```{r, eval=TRUE}
 # Longitude and Latitude
 train <- filter(train, longitude > 1)
 
 ggplot(data=train) + 
   geom_point(aes(x=longitude, y=latitude, 
-                  color=status_group, alpha=0.2, size=1), size=1) +
-  facet_grid(.~status_group)
+                  color=status_group, alpha=0.2, size=.5), size=.5)
 ```
 ![](LongLat.png)
 
-The clustering of the good pumps as well as the nonlinearity of the clustering among the x and y (longitude and latitude) axes lead us to believe that we should include an interaction and spline in our model.   
+The clustering of the good pumps as well as the nonlinearity of the clustering among the x and y (longitude and latitude) axes lead us to believe that we should include an interaction and spline in our model.  
 
-For Prof:   
-1. This assumption correct?
-2. Interaction among splines?
+The geographical nature of our data makes the interactions among our variables potentially very complicated and as such we will compare the effectiveness of a machine learning model to a regression model.
 
-### Looking at Longitude and Latitude Nonlinearity
+### A Geographical Model
 
-```{r, message=FALSE}
+```{r, message=FALSE, warning=FALSE}
+# FUNCTION eval.glm: returns classification rate and AUC of glm on test set data
+eval.glm <- function(glm, data=test.glm){
+  # Calculate classification rate
+  data$pred <- predict(glm, newdata=data, type="response")
+  data$pred <- ifelse(data$pred > .5, 1, 0)
+  data$success <- ifelse(data$pred == data$status_group, 1, 0)
+  classrate <- prop.table(table(data$success))
+  
+  # Calculate AUC
+  auc <- auc(data$status_group, predict(glm, newdata=data, type="response"))
+
+  cat("Classification Rate:", as.character(classrate[[2]]), "\nAUC:", auc)
+}
+```
+
+```{r, message=FALSE, warning=FALSE}
 library(splines); library(pROC);
 
 # Split into 80/20 Train/Test Set
+train$status_group <- as.factor(train$status_group)
 train.glm <- sample_frac(train, .8)
 test.glm <- setdiff(train, train.glm)
 
-# Linear vs. Spline terms
+# Treating longitude and latitude as linear
 lin <- glm(status_group ~ longitude + latitude, data=train.glm, family=binomial)
-plot.roc(test.glm$status_group, predict(lin, newdata=test.glm, type="response"))
+eval.glm(lin)
 
+# Treating longitude and latitude as splines
 spl <- glm(status_group ~ bs(longitude) + bs(latitude), data=train.glm, family=binomial)
-plot.roc(test.glm$status_group, predict(spl, newdata=test.glm, type="response"))
-
-# INTERACTION TERMS
-int1 <- glm(status_group ~ (bs(longitude) + bs(latitude)), 
-             data=train.glm, family=binomial)
-p <- plot.roc(test.glm$status_group, predict(int1, newdata=test.glm, type="response"))
-p$auc
-
-int2 <- glm(status_group ~ (bs(longitude) + bs(latitude))^2, 
-             data=train.glm, family=binomial)
-p <- plot.roc(test.glm$status_group, predict(int2, newdata=test.glm, type="response"))
-p$auc
-
-int3 <- glm(status_group ~ (bs(longitude) + bs(latitude))^3, 
-             data=train.glm, family=binomial)
-p <- plot.roc(test.glm$status_group, predict(int3, newdata=test.glm, type="response"))
-p$auc
-
-int4 <- glm(status_group ~ (bs(longitude) + bs(latitude))^4, 
-             data=train.glm, family=binomial)
-p <- plot.roc(test.glm$status_group, predict(int4, newdata=test.glm, type="response"))
-p$auc
+eval.glm(spl)
 ```
 
-## Quantity Variable
-```{r, eval=FALSE}
-library(ggplot2)
-ggplot(data=train) + stat_count(aes(x=status_group, fill=..count..)) + facet_grid(. ~ quantity)
+The out of sample estimate of AUC is dismal on both accounts - worse than the null of 0.50 on the linear model and only slightly better when treating longtitude and latitude as splines. We now try adding multiple fold interactions.
+
+```{r, message=FALSE, warning=FALSE}
+# 2 way interactions
+glm2 <- glm(status_group ~ (bs(longitude) + bs(latitude))^2, 
+             data=train.glm, family=binomial)
+eval.glm(glm2)
+
+# 3 way interactions
+glm3 <- glm(status_group ~ (bs(longitude) + bs(latitude))^3, 
+             data=train.glm, family=binomial)
+eval.glm(glm3)
+
+# 4 way interactions
+glm4 <- glm(status_group ~ (bs(longitude) + bs(latitude))^4, 
+             data=train.glm, family=binomial)
+eval.glm(glm4)
 ```
 
-\newpage
+Adding interactions only improves our AUC up until the 2-fold level. Now we will try a random forest.
 
-## Performance Metrics
-```{r, eval=FALSE}
-# Obtaining True/False table for random forest observations
-tab <- table(train$status_group, train$status_group.rf)
-prop.table(table(train$status_group, train$status_group.rf), 1)
-sum(diag(tab))/sum(tab)
+```{r, message=FALSE, eval=FALSE}
+library(randomForest)
+rf1  <-  randomForest(as.factor(status_group) ~ longitude + latitude, data=train, ntree=500)
 ```
+```{r}
+rf1
+```
+
+
+The random forest reflects a drastic improvement over the regression models, with a correct classification rate of . Our insight from this result is that because we are using the same two variables, `longitude` and `latitude`, there are complex interactions and transformations in the data that are not captured by a simple regression model, and in this case, machine learning techniques will likely prove to be more effective for categorization. This idea is supported by the complex map we obtained of the clustering of pumps.
+
+
 
 ## K Nearest Neighbor Classification
-```{r}
+```{r, eval=FALSE}
+library(class)
+
 # Unity based normalization
 knn.train <- train
 lat <- knn.train$latitude
@@ -178,14 +166,16 @@ knn.train$longitude <- (lon - min(lon))/(max(lon)-min(lon))
 gps <- knn.train$gps_height
 knn.train$gps_height <- (gps - min(gps))/(max(gps)-min(gps))
 
-# Sample and split into training and classification variables
+# Sample and split into training and test set
 knn.train <- sample_frac(train, .8)
 knn.test <- setdiff(train, knn.train)
 
 knn.trainlabel <- knn.train[,"status_group"]
-knn.train <- select(knn.train, longitude, latitude, gps_height)
+knn.trainlabel <- ifelse(as.character(knn.trainlabel)=="functional", 1, 0)
+knn.train <- select(knn.train, longitude, latitude)
 knn.testlabel <- knn.test[,"status_group"]
-knn.test <- select(knn.test, longitude, latitude, gps_height)
+knn.testlabel <- ifelse(as.character(knn.testlabel)=="functional", 1, 0)
+knn.test <- select(knn.test, longitude, latitude)
 
 knn.pred <- knn(knn.train, knn.test, cl=knn.trainlabel, k=3)
 
@@ -195,10 +185,147 @@ temp <- mutate(temp, suc = ifelse(knn.testlabel==knn.pred, 1, 0))
 ```
 
 
+## Full Machine Learning Models
+
+Because we are now exclusively using machine learning techniques to categorize the Tanzanian water pumps, we will return to the original 3-level categorical response variable as the reason we reduced it earlier was to avoid the use of multinomial logistic regression.
+```{r}
+# Return to 3 level categorical response variable
+train <- left_join(df.values, df.labels, by="id")
+train <- select(dataprep(train), -date_recorded)
+```
+
+### Random Forests and Bagging
+```{r, eval=FALSE}
+# 500 tree random forest
+rf.500 <- randomForest(as.factor(status_group) ~ ., data=train)
+```
+```{r}
+rf.500
+```
+With the full model in a 500 tree random forest, we obtain an out-of-bag classification rate of .8097 Let's try doubling the number of trees.
+
+```{r, eval=FALSE}
+# 1000 tree random forest
+rf.1000 <- randomForest(as.factor(status_group) ~ ., data=train, ntree=1000)
+```
+```{r}
+rf.1000
+```
+Increasing the number of trees grown results in an out-of-bag classification rate of .8112, improving our classification rate slightly. 
+
+
+```{r, eval=FALSE}
+# Bagging
+bagging <- randomForest(as.factor(status_group) ~ ., data=train, mtry=(ncol(train)-1))
+```
+```{r}
+bagging
+```
+The bagging algorithm used with 500 trees gives a classification rate of .8055, worse than both random forests using $\sqrt{p}$ predictors, verifying that the instability introduced by reducing the number of predictors actually increases the predictive accuracy of random forests.
+
+### Boosted Trees
+```{r}
+library(gbm)
+# Create training set and test set
+train.gbm <- sample_frac(train, .8)
+test.gbm <- setdiff(train, train.gbm)
+
+# FUNCTION eval.gbm: evaluates boosted tree on test set and returns correct classification rate.
+eval.gbm <- function(gbm, data=test.gbm, n.trees){
+  library(reshape2); library(dplyr); library(magrittr);
+  
+  probs <- predict(gbm, data, n.trees=n.trees, type="response") #generate gbm predictions on test set
+  out <- data.frame(data$status_group, probs)
+  
+  names(out)[2:4] <- c("functional", "functional needs repair", "non functional")
+  out$x <- row.names(out) # Name all rows
+  
+  # Find the maximum probability response for each row
+  response <- 
+    out %>%
+    melt() %>% # Melt on status_group variable
+    group_by(x) %>%
+    summarise(max(value)) %>%
+    arrange(as.numeric(x))
+  
+  out <- inner_join(melt(out), response, by=c("x", "value"="max(value)"))
+  out$success <- ifelse(out[,1]==out[,3], 1, 0)
+  
+  classrate <- sum(out$success)/nrow(out)
+
+  cat("Classification Rate:", as.character(classrate))
+}
+```
+
+```{r}
+# Default boosted tree
+gbm <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial")
+eval.gbm(gbm, n.trees=100)
+
+# Increasing number of trees
+gbm <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial", n.trees=1000)
+eval.gbm(gbm, n.trees=1000)
+
+# Changing depth and learning rate
+gbm <- gbm(status_group ~ ., data=train.gbm, distribution="multinomial", 
+           n.trees=1000, interaction.depth = 2, shrinkage = .01)
+eval.gbm(gbm, n.trees=1000)
+```
 
 
 
+## Quantity Variable
+```{r, eval=FALSE}
+library(ggplot2)
+ggplot(data=train) + stat_count(aes(x=status_group, fill=..count..)) + facet_grid(. ~ quantity)
+```
 
+
+## Correlation and Multicollinearity
+
+Most of the variables are factors so we only need to look at a few numeric variables for multicollinearity, namely, `gps_height`, `longitude`, `latitude`, and `construction year`.
+
+```{r}
+
+```
+
+
+## Variable Importance
+
+We examine the importance of each variables and try to filter out unnecessary variables to simplify analysis.
+
+(For future reference, to use more than 4gb memory we must be using 64 bit R and increase memory limit using the function memory.limit() to take advantage of a high memory machine)
+
+```{r, eval=FALSE}
+# Random Forest
+library(randomForest)
+fit  <-  randomForest(as.factor(status_group) ~ ., data=train, ntree=500)
+varImpPlot(fit)
+fit
+```
+
+
+We filtered our predictor variables down to 11 based on the variable importance plot.
+
+```{r}
+train <- select(train, -management_group, -public_meeting,
+                       -permit, -water_quality, -basin, -amount_tsh,
+                       -scheme_management, -source_type)
+```
+
+## The Date Variable
+```{r}
+train <- left_join(df.values, df.labels, by="id")
+train$date_recorded <- as.Date(as.character(train$date_recorded)) # Common date format is recognized by R
+
+# Create "days after min date" variable
+train$date_recorded <- as.integer(train$date_recorded - min(train$date_recorded))
+
+# Filter outliers
+train <- filter(train, date_recorded > 3000)
+
+# Would normalizing the dates help at all for a random forest? Since we are making breaks and not calculating any statistics
+```
 
 
 
