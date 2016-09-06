@@ -54,30 +54,30 @@ xgb.cv(data = train_xgbmatrix,
        nrounds = 1000, nthread = 7,
        nfold = 3,
        objective = "multi:softmax",
-       eta = .2,
-       max.depth = 6,
-       min_child_weight = 3,
-       colsample_bytree = .8,
-       subsample = .8,
+       eta = .1,
+       max.depth = 12,
+       min_child_weight = 6,
+       colsample_bytree = .4,
+       subsample = 1,
        gamma = 0,
        eval_metric = "merror",
        num_class = 3,
-       print.every.n = 10)
+       print.every.n = 2)
 which(model_cv$test.merror.mean == min(model_cv$test.merror.mean))
 
 
-### Model Training
+### Model Training .1903
 model_xgb <- 
 xgb.train(data = train_xgbmatrix,
           nrounds = 1000, nthread = 7,
-          nfold = 5,
+          nfold = 3,
           objective = "multi:softmax",
-          eta = .3,
-          max.depth = 4,
-          min_child_weight = 3,
-          colsample_bytree = .8,
-          subsample = .9,
-          gamma = .2,
+          eta = .1,
+          max.depth = 12,
+          min_child_weight = 6,
+          colsample_bytree = .4,
+          subsample = 1,
+          gamma = 0,
           eval_metric = "merror",
           num_class = 3)
 
@@ -87,7 +87,7 @@ submission$label <- as.factor(submission$label)
 levels(submission$label) <- c("functional", "functional needs repair", "non functional")
 names(submission) <- c('id', 'status_group')
 
-write.csv(submission, file = "submission1.csv", row.names = F)
+write.csv(submission, file = "submission2.csv", row.names = F)
 
 
 
