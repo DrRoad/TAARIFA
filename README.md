@@ -1,8 +1,4 @@
 # TAARIFA
-Data Mining of Tanzanian Water Pumps   
+[Data Mining of Tanzanian Water Pumps](http://www.drivendata.org/competitions/7/)   
 
-Eric Chang   
-Mathew Li   
-Chen Lin   
-Haoyu Wang   
-Allie Woodhouse   
+My solution to a predictive analytics competition hosted by DrivenData.
