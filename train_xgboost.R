@@ -4,7 +4,6 @@ require(magrittr)
 require(Matrix)
 
 source('./Preprocessing/load.R')
-source('./Preprocessing/transform.R')
 source('./feature_engineering.R')
 
 ### Test old configuration------------------------------------------
@@ -27,20 +26,13 @@ test <- bind_cols(select(test, id), old_config(test))
 
 #####################################################################
 
-
-
-
 # Relevel training labels to use multi:softmax on xgboost
 levels(train$status_group) <- c(0, 1, 2)
 
 # Create xgboost matrices
-train_xgb_sparse <- sparse.model.matrix(status_group ~ .-1, 
-                                        data = select(train, -id))
-test_xgb_sparse <- sparse.model.matrix(status_group ~ .-1,
-                                       data = bind_cols(data.frame(status_group=1:nrow(test)),
-                                                        select(test, -id)))
+train_xgbmatrix <- create_xgb_matrices(train, type = 'train')
+test_xgbmatrix <- create_xgb_matrices(test, type = 'test')
 
-train_xgbmatrix <- xgb.DMatrix(data=train_xgb_sparse, label=train$status_group %>% as.character() %>% as.integer())
 
 
 
@@ -49,6 +41,7 @@ params <- c(
   
 )
 
+# 258 .1889
 model_cv <- 
 xgb.cv(data = train_xgbmatrix,
        nrounds = 1000, nthread = 7,
@@ -63,14 +56,12 @@ xgb.cv(data = train_xgbmatrix,
        eval_metric = "merror",
        num_class = 3,
        print.every.n = 2)
-which(model_cv$test.merror.mean == min(model_cv$test.merror.mean))
-
+eval_xgb_cv(model_cv)
 
 ### Model Training .1903
 model_xgb <- 
 xgb.train(data = train_xgbmatrix,
           nrounds = 1000, nthread = 7,
-          nfold = 3,
           objective = "multi:softmax",
           eta = .1,
           max.depth = 12,
