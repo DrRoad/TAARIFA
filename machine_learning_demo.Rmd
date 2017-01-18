@@ -42,7 +42,7 @@ model_cv <-
          colsample_bytree = .4,
          subsample = 1,
          gamma = 0,
-         print_every_n = 10)
+         print_every_n = 1)
 ```
 
 The long list of numbers gives the progress of minimizing the error at each iteration. We want to find a 'goldilocks' number of iterations. Too low and the model is not finished training, too high and it has overfit.
